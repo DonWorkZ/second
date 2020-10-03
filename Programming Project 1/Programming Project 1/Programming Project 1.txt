@@ -1,0 +1,439 @@
+import java.io.*;
+import java.util.Scanner;
+
+class Node {
+   String guide;
+   // guide points to max key in subtree rooted at node
+    int value;
+    //value is the entrance fee
+}
+
+class InternalNode extends Node {
+   Node child0, child1, child2;
+   // child0 and child1 are always non-null
+   // child2 is null iff node has only 2 children
+}
+
+class LeafNode extends Node {
+   // guide points to the key
+
+   int value;
+}
+
+class TwoThreeTree {
+   Node root;
+   int height;
+
+   TwoThreeTree() {
+      root = null;
+      height = -1;
+   }
+}
+
+class WorkSpace {
+// this class is used to hold return values for the recursive doInsert
+// routine (see below)
+
+   Node newNode;
+   int offset;
+   boolean guideChanged;
+   Node[] scratch;
+}
+
+public class fordsdilemma {
+
+  
+    
+   public static void main(String[] args) throws Exception {
+      BufferedWriter output = new BufferedWriter(new OutputStreamWriter(System.out, "ASCII"), 4096);
+      Scanner scan = new Scanner(System.in);
+      TwoThreeTree universe = new TwoThreeTree();
+
+      int n = Integer.parseInt(scan.nextLine()); //size of the database
+      if(n==0)
+           return;
+      int i = n;
+      String small= "";
+      String large = "";
+      while (i > 0) //inserting all planets and fees into the tree
+      {
+          String entry[] = scan.nextLine().split(" "); //putting the line of data into a String
+          String key = entry[0];
+          int value = Integer.parseInt(entry[1]);
+          //output.write(key + " "+value+"\n");
+          insert(key, value, universe); //insert key and value pair
+          if(small.equals("")){
+              small = key;
+              large = key;
+          }
+          else{
+              if(small.compareTo(key)>0){
+                  small = key;
+              }
+              if(key.compareTo(large)>0){
+                  large = key;
+              }
+          }
+          
+          i--;
+      }
+      int m = Integer.parseInt(scan.nextLine()); //number of queries to the database
+        
+      for (i=0; i<m; i++)
+      {
+          String query[] = scan.nextLine().split(" "); //putting the query into one string
+          String x = query[0]; //starting planet
+          String y = query[1]; //ending planet
+          if(x.compareTo("a")==0 && y.compareTo("z")==0){
+              printRange(small, large, universe.root, universe.height , output);
+          }
+          else{
+              if(x.compareTo(y)>0)
+                printRange(y, x, universe.root, universe.height , output);
+              else printRange(x, y, universe.root, universe.height , output);
+          }
+          
+      }
+      output.flush();
+   }
+
+   static void insert(String key, int value, TwoThreeTree tree) {
+   // insert a key value pair into tree (overwrite existsing value
+   // if key is already present)
+
+      int h = tree.height;
+
+      if (h == -1) {
+          LeafNode newLeaf = new LeafNode();
+          newLeaf.guide = key;
+          newLeaf.value = value;
+          tree.root = newLeaf;
+          tree.height = 0;
+      }
+      else {
+         WorkSpace ws = doInsert(key, value, tree.root, h);
+
+         if (ws != null && ws.newNode != null) {
+         // create a new root
+
+            InternalNode newRoot = new InternalNode();
+            if (ws.offset == 0) {
+               newRoot.child0 = ws.newNode;
+               newRoot.child1 = tree.root;
+            }
+            else {
+               newRoot.child0 = tree.root;
+               newRoot.child1 = ws.newNode;
+            }
+            resetGuide(newRoot);
+            tree.root = newRoot;
+            tree.height = h+1;
+         }
+      }
+   }
+
+   static WorkSpace doInsert(String key, int value, Node p, int h) {
+   // auxiliary recursive routine for insert
+
+      if (h == 0) {
+         // we're at the leaf level, so compare and
+         // either update value or insert new leaf
+
+         LeafNode leaf = (LeafNode) p; //downcast
+         int cmp = key.compareTo(leaf.guide);
+
+         if (cmp == 0) {
+            leaf.value = value;
+            return null;
+         }
+
+         // create new leaf node and insert into tree
+         LeafNode newLeaf = new LeafNode();
+         newLeaf.guide = key;
+         newLeaf.value = value;
+
+         int offset = (cmp < 0) ? 0 : 1;
+         // offset == 0 => newLeaf inserted as left sibling
+         // offset == 1 => newLeaf inserted as right sibling
+
+         WorkSpace ws = new WorkSpace();
+         ws.newNode = newLeaf;
+         ws.offset = offset;
+         ws.scratch = new Node[4];
+
+         return ws;
+      }
+      else {
+         InternalNode q = (InternalNode) p; // downcast
+         int pos;
+         WorkSpace ws;
+
+         if (key.compareTo(q.child0.guide) <= 0) {
+            pos = 0;
+            ws = doInsert(key, value, q.child0, h-1);
+         }
+         else if (key.compareTo(q.child1.guide) <= 0 || q.child2 == null) {
+            pos = 1;
+            ws = doInsert(key, value, q.child1, h-1);
+         }
+         else {
+            pos = 2;
+            ws = doInsert(key, value, q.child2, h-1);
+         }
+
+         if (ws != null) {
+            if (ws.newNode != null) {
+               // make ws.newNode child # pos + ws.offset of q
+
+               int sz = copyOutChildren(q, ws.scratch);
+               insertNode(ws.scratch, ws.newNode, sz, pos + ws.offset);
+               if (sz == 2) {
+                  ws.newNode = null;
+                  ws.guideChanged = resetChildren(q, ws.scratch, 0, 3);
+               }
+               else {
+                  ws.newNode = new InternalNode();
+                  ws.offset = 1;
+                  resetChildren(q, ws.scratch, 0, 2);
+                  resetChildren((InternalNode) ws.newNode, ws.scratch, 2, 2);
+               }
+            }
+            else if (ws.guideChanged) {
+               ws.guideChanged = resetGuide(q);
+            }
+         }
+
+         return ws;
+      }
+   }
+
+
+   static int copyOutChildren(InternalNode q, Node[] x) {
+   // copy children of q into x, and return # of children
+
+      int sz = 2;
+      x[0] = q.child0; x[1] = q.child1;
+      if (q.child2 != null) {
+         x[2] = q.child2;
+         sz = 3;
+      }
+      return sz;
+   }
+
+   static void insertNode(Node[] x, Node p, int sz, int pos) {
+   // insert p in x[0..sz) at position pos,
+   // moving existing extries to the right
+
+      for (int i = sz; i > pos; i--)
+         x[i] = x[i-1];
+
+      x[pos] = p;
+   }
+
+   static boolean resetGuide(InternalNode q) {
+   // reset q.guide, and return true if it changes.
+
+      String oldGuide = q.guide;
+      if (q.child2 != null)
+         q.guide = q.child2.guide;
+      else
+         q.guide = q.child1.guide;
+
+      return q.guide != oldGuide;
+   }
+
+
+   static boolean resetChildren(InternalNode q, Node[] x, int pos, int sz) {
+   // reset q's children to x[pos..pos+sz), where sz is 2 or 3.
+   // also resets guide, and returns the result of that
+
+      q.child0 = x[pos];
+      q.child1 = x[pos+1];
+
+      if (sz == 3)
+         q.child2 = x[pos+2];
+      else
+         q.child2 = null;
+
+      return resetGuide(q);
+   }
+    
+    //recursively prints all leaves in subtree rooted at node p
+    // h is the height of Node p's subtree
+    static void printAll(int h, Node p, BufferedWriter output) throws Exception
+    {
+        if(h==0) //base case: leaf node
+        {
+            output.write(p.guide + " " + ((LeafNode)(p)).value + "\n");
+            //print : "planet name" "entrance fee"; then next line
+        }
+        else //we are not at a leaf node
+        {
+            InternalNode root = (InternalNode) p;
+            printAll(h-1, root.child0, output); //calling printAll rooted at child 1
+            printAll(h-1, root.child1, output); //calling printAll rooted at child 2
+            if (root.child2 != null) //check if p has a third child
+            {
+                printAll(h-1, root.child2, output); //calling printAll rooted at child 3
+            }
+        }
+    }
+    
+    //iteratively search for x and store search path
+    //h is the height of the tree
+    //x is the key we want to find in tree rooted at p
+    //store all nodes along the search path in an array
+    //store the leaf node
+    //do not add x to the search path
+    static LeafNode search(int h, Node p, String x, InternalNode[] path, BufferedWriter output) throws Exception
+    {
+        Node root = p;
+        for (int i=0; i<h; i++)
+        {
+            path[i] = (InternalNode) root; //add the root to the array right away 
+            
+            InternalNode point = (InternalNode) root; //pointer to store the key on search path
+            
+            if (x.compareTo(point.child0.guide) <= 0) //x is in child0's subtree
+            {
+                root = point.child0; //re-rooting the tree at child0
+            }
+            else if (point.child2 == null //only two children
+                     || x.compareTo(point.child1.guide) <= 0) //third child exists;x is in child1's subtree
+            {
+                root = point.child1; //re-rooting the tree at child1
+            }
+            else //x is in child2's subtree
+            {
+                root = point.child2;
+            }
+        }
+        //root points to a leaf node
+        return (LeafNode) root;
+    }
+    
+    //h is the height of the tree
+    //x is the starting key of our range
+    //y is the ending key of our range
+    //p is the root of our search
+    static void printRange(String x, String y, Node p, int h, BufferedWriter output) throws Exception
+    {
+        
+        //we want to print the subtree of every node in each search path
+        InternalNode[] pathX = new InternalNode[h]; //x's search path
+        InternalNode[] pathY = new InternalNode[h]; //y's search path
+        
+        LeafNode keyX = null;
+        LeafNode keyY = null;
+        int height1 = h;
+        int height2 = h;
+        
+        keyX = search(h, p, x, pathX, output); //search for x and record path in pathX and the leaf node
+        keyY = search(h, p, y, pathY, output); //search for y and record path in pathY and the leaf node
+    
+        // check if the leaf searched is present or not
+        if(keyX==null || keyY == null || keyX.guide.compareTo(x)!=0 || keyY.guide.compareTo(y) !=0){
+
+            return;
+        }
+        
+        //calclate divergence point
+        InternalNode diverge = null; //the node after which point x and y diverge
+        int divIndex = 0; //the index in pathX that diverge is stored at
+        for (int i=1; i<pathX.length; i++)
+        {
+            if (pathX[i].guide.compareTo(pathY[i].guide)!=0) //found a divergence
+            {
+                diverge = pathX[i-1]; //the divergence point is the previous node in the array
+                divIndex = i - 1;
+                break;
+            }  
+        }
+        if(diverge==null && pathX[pathX.length-1]==pathY[pathY.length-1]){
+            diverge = pathX[pathX.length-1];
+            divIndex = pathX.length-1;
+        }
+        if(diverge==null)
+          return;
+        //conditionally print x
+       
+        output.write(keyX.guide + " " + keyX.value + "\n");
+        if(x.compareTo(y)==0){
+          return;
+        }
+
+        if(pathX[pathX.length-1] != diverge && pathX[pathX.length-1].child0 == keyX)
+            //child1 is right of the search path
+        {
+            printAll(0, pathX[pathX.length-1].child1, output); //print child1's subtrees
+        }
+
+        if (pathX[pathX.length-1] != diverge && pathX[pathX.length-1].child2 != null  && (pathX[pathX.length-1].child2 != keyX))
+                //child2 is right of the search path
+        {
+            printAll(0, pathX[pathX.length-1].child2, output); //print child2's subtrees
+        }
+            
+        
+        
+//         //walk from x to divergence point
+//         //print out leaves hanging off to right of search path
+        for (int i=pathX.length - 1 ; i>divIndex+1; i--)
+        {
+            if(pathX[i-1].child0 == pathX[i])
+                //child1 is right of the search path
+            {
+                printAll(height1-i, pathX[i-1].child1, output); //print child1's subtrees
+            }
+            if (pathX[i-1].child2 != null && (pathX[i-1].child2 != pathX[i]))
+                //child2 is right of the search path
+            {
+                printAll(height1-i, pathX[i-1].child2, output); //print child2's subtrees
+            }
+        }
+                
+        //process divergence point
+        if (divIndex + 1 <pathX.length && diverge.child0 == pathX[divIndex+1] && diverge.child2 != null
+                    && divIndex + 1< pathY.length && diverge.child2 == pathY[divIndex+1])
+                //compares divergence node's left and right children to the node in x and y's search path directly after diverge
+        {
+                printAll(h - divIndex - 1, diverge.child1, output); //print the middle node's trees
+        }
+        else if(keyX == diverge.child0 && diverge.child2 != null && diverge.child2 == keyY){
+            printAll(h - divIndex - 1, diverge.child1, output); 
+        }
+        //walk from divergence point to y
+        //print out leaves hanging to the left of search path
+        for (int i=divIndex + 1; i<pathY.length-1; i++)
+        {
+                if (pathY[i].child2 != null && pathY[i].child2 == pathY[i+1]) //child2 exists and is on search path
+                {
+                    printAll(height2-i -1, pathY[i].child0, output); //print child0's subtrees
+                    printAll(height2-i-1, pathY[i].child1, output); //print child1's subtrees
+                }
+                else if (pathY[i].child1 == pathY[i+1]) //child1 is on search path
+                {
+                    printAll(height2-i-1, pathY[i].child0, output); //print child0's subtrees
+                }
+            
+        }
+        if (pathY[pathY.length-1] != diverge && pathY[pathY.length-1].child2 != null  && (pathY[pathY.length-1].child2 == keyY))
+                //child2 is right of the search path
+        {
+            printAll(0, pathY[pathY.length-1].child0, output); //print child2's subtrees
+            printAll(0, pathY[pathY.length-1].child1, output);
+        }
+        
+        if(pathY[pathY.length-1] != diverge && pathY[pathY.length-1].child1 == keyY)
+            //child1 is right of the search path
+        {
+            printAll(0, pathY[pathY.length-1].child0, output); //print child1's subtrees
+        }   
+        //conditionally print y
+        
+        output.write(keyY.guide + " " + keyY.value + "\n");
+
+    
+    }
+    
+}
